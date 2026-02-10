@@ -1,0 +1,1 @@
+docker build -t docauthority-backend . && docker run --env-file .env -p 8080:8080 docauthority-backend

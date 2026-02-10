@@ -1,0 +1,11 @@
+com\document\service\DocumentService.class
+com\document\model\Document.class
+com\document\MyApplication.class
+com\document\enums\SENSITIVITY.class
+com\document\mapper\DocumentMapperImpl.class
+com\document\enums\STATUS.class
+com\document\repository\DocumentRepository.class
+com\document\controller\DocumentController.class
+com\document\config\H2ConsoleConfig.class
+com\document\mapper\DocumentMapper.class
+com\document\dto\DocumentDTO.class

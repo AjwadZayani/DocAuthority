@@ -1,0 +1,10 @@
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\config\H2ConsoleConfig.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\controller\DocumentController.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\dto\DocumentDTO.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\enums\SENSITIVITY.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\enums\STATUS.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\mapper\DocumentMapper.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\model\Document.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\MyApplication.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\repository\DocumentRepository.java
+C:\Users\User\Documents\GitHub\DocAuthority\backend\document\src\main\java\com\document\service\DocumentService.java

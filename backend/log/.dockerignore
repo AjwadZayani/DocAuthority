@@ -1,0 +1,6 @@
+local_kafka/
+README.md
+__pycache__/
+*.pyc
+*.pyo
+*.pyd

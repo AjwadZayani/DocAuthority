@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.document.model.Document;
@@ -174,6 +175,14 @@ public class DocumentController {
         return mapper.toDto(svc.saveDocument(existingDoc));
     }
 
+    @PostMapping("/{id}/approve")
+    public void approveDocument(@PathVariable UUID id, @RequestParam UUID actorId) {
+        var result = svc.approveDocument(id, actorId);
+        if (!result.isAllowed()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, result.getReason());
+        }
+    }
+    
     
     
 }

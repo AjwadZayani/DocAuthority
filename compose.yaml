@@ -1,0 +1,123 @@
+services:
+  document:
+    build: ./backend/document
+    ports:
+      - "8080:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    env_file:
+      - ./backend/document/.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_AUDIT_TOPIC: docauthority.audit.events
+  identity:
+    build: ./backend/identity
+    ports:
+      - "5001:5001"
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    env_file:
+      - ./backend/identity/.env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_AUDIT_TOPIC: docauthority.audit.events
+
+  log:
+    build: ./backend/log
+    depends_on:
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_GROUP_ID: docauthority-log-consumer
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    hostname: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:29092,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.3
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        for i in {1..20}; do
+          kafka-topics --bootstrap-server kafka:29092 --list >/dev/null 2>&1 && break
+          echo "Waiting for Kafka..."
+          sleep 2
+        done
+
+        for t in \
+          docauthority.document.created \
+          docauthority.document.updated \
+          docauthority.document.status.changed \
+          docauthority.document.approval.requested \
+          docauthority.document.approved \
+          docauthority.document.rejected \
+          docauthority.document.published \
+          docauthority.document.archived \
+          docauthority.document.deleted \
+          docauthority.identity.department.created \
+          docauthority.identity.user.registered \
+          docauthority.identity.user.role.assigned \
+          docauthority.identity.auth.login.succeeded \
+          docauthority.identity.role.created \
+          docauthority.identity.role.updated \
+          docauthority.identity.role.deleted \
+          docauthority.identity.permission.created \
+          docauthority.identity.permission.updated \
+          docauthority.identity.permission.deleted \
+          docauthority.identity.role-permission.assigned \
+          docauthority.identity.role-permission.removed \
+          docauthority.identity.role-permission.replaced \
+          docauthority.audit.events \
+          docauthority.dlq
+        do
+          kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic "$$t" --partitions 1 --replication-factor 1
+        done
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092

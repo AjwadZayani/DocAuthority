@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import Base, SessionLocal, engine
+from event_publisher import publish_audit, publish_event
 from models import Department, Role, Sensitivity, User
 
 
@@ -214,6 +215,14 @@ def seed_identity_data():
                 root_user.roles.append(r_root)
 
         session.commit()
+        publish_audit(
+            "docauthority.identity.seed.completed",
+            {
+                "permissions_seeded": 4,
+                "roles_seeded": 5,
+                "root_admin_created": root_created,
+            },
+        )
         return {
             "ok": True,
             "status": 200,
@@ -257,6 +266,17 @@ def add_user_role(user_id: str, role_name: str | None = None, role_id: str | Non
         if role not in user.roles:
             user.roles.append(role)
             session.commit()
+            publish_event(
+                "docauthority.identity.user.role.assigned",
+                "docauthority.identity.user.role.assigned",
+                {
+                    "user_id": str(user.id),
+                    "role_id": str(role.id),
+                    "role_name": role.name,
+                },
+                key=user.id,
+                actor_id=user.id,
+            )
 
         return {"ok": True, "status": 200, "error": None, "data": _serialize_user(user)}
     finally:
@@ -284,6 +304,13 @@ def register_user(name: str, email: str, password: str, department_id: str, role
         session.add(user)
         session.commit()
         session.refresh(user)
+        publish_event(
+            "docauthority.identity.user.registered",
+            "docauthority.identity.user.registered",
+            {"user_id": str(user.id), "email": user.email, "department_id": str(user.department_id)},
+            key=user.id,
+            actor_id=user.id,
+        )
         return {"ok": True, "status": 201, "error": None, "data": _serialize_user(user)}
     except IntegrityError:
         session.rollback()
@@ -302,6 +329,12 @@ def create_department(name: str, description: str | None = None):
         session.add(department)
         session.commit()
         session.refresh(department)
+        publish_event(
+            "docauthority.identity.department.created",
+            "docauthority.identity.department.created",
+            {"department_id": str(department.id), "name": department.name},
+            key=department.id,
+        )
         return {
             "ok": True,
             "status": 201,
@@ -362,6 +395,18 @@ def create_role(
         session.add(role)
         session.commit()
         session.refresh(role)
+        publish_event(
+            "docauthority.identity.role.created",
+            "docauthority.identity.role.created",
+            {
+                "role_id": str(role.id),
+                "name": role.name,
+                "level": role.level,
+                "is_root_admin": role.is_root_admin,
+                "parent_role_id": str(role.parent_role_id) if role.parent_role_id else None,
+            },
+            key=role.id,
+        )
         return {
             "ok": True,
             "status": 201,
@@ -418,6 +463,18 @@ def update_role(role_id: str, payload: dict):
 
         session.commit()
         session.refresh(role)
+        publish_event(
+            "docauthority.identity.role.updated",
+            "docauthority.identity.role.updated",
+            {
+                "role_id": str(role.id),
+                "name": role.name,
+                "level": role.level,
+                "is_root_admin": role.is_root_admin,
+                "parent_role_id": str(role.parent_role_id) if role.parent_role_id else None,
+            },
+            key=role.id,
+        )
         return {
             "ok": True,
             "status": 200,
@@ -455,8 +512,16 @@ def delete_role(role_id: str):
         role.parent_role_id = None
         for child in role.child_roles:
             child.parent_role_id = None
+        deleted_role_id = str(role.id)
+        deleted_role_name = role.name
         session.delete(role)
         session.commit()
+        publish_event(
+            "docauthority.identity.role.deleted",
+            "docauthority.identity.role.deleted",
+            {"role_id": deleted_role_id, "name": deleted_role_name},
+            key=deleted_role_id,
+        )
         return {"ok": True, "status": 200, "error": None, "data": {"deleted": True}}
     finally:
         session.close()
@@ -479,6 +544,16 @@ def create_permission(name: str, description: str | None, min_sensitivity: str):
         session.add(permission)
         session.commit()
         session.refresh(permission)
+        publish_event(
+            "docauthority.identity.permission.created",
+            "docauthority.identity.permission.created",
+            {
+                "permission_id": str(permission.id),
+                "name": permission.name,
+                "min_sensitivity": permission.min_sensitivity.value,
+            },
+            key=permission.id,
+        )
         return {
             "ok": True,
             "status": 201,
@@ -523,6 +598,16 @@ def update_permission(permission_id: str, payload: dict):
 
         session.commit()
         session.refresh(permission)
+        publish_event(
+            "docauthority.identity.permission.updated",
+            "docauthority.identity.permission.updated",
+            {
+                "permission_id": str(permission.id),
+                "name": permission.name,
+                "min_sensitivity": permission.min_sensitivity.value,
+            },
+            key=permission.id,
+        )
         return {
             "ok": True,
             "status": 200,
@@ -555,9 +640,17 @@ def delete_permission(permission_id: str):
         if permission is None:
             return {"ok": False, "status": 404, "error": "Permission not found", "data": None}
 
+        deleted_permission_id = str(permission.id)
+        deleted_permission_name = permission.name
         permission.roles = []
         session.delete(permission)
         session.commit()
+        publish_event(
+            "docauthority.identity.permission.deleted",
+            "docauthority.identity.permission.deleted",
+            {"permission_id": deleted_permission_id, "name": deleted_permission_name},
+            key=deleted_permission_id,
+        )
         return {"ok": True, "status": 200, "error": None, "data": {"deleted": True}}
     finally:
         session.close()
@@ -584,6 +677,12 @@ def assign_permission_to_role(role_id: str, permission_id: str):
         if permission not in role.permissions:
             role.permissions.append(permission)
             session.commit()
+            publish_event(
+                "docauthority.identity.role-permission.assigned",
+                "docauthority.identity.role-permission.assigned",
+                {"role_id": str(role.id), "permission_id": str(permission.id)},
+                key=role.id,
+            )
 
         return {
             "ok": True,
@@ -620,6 +719,12 @@ def remove_permission_from_role(role_id: str, permission_id: str):
         if permission in role.permissions:
             role.permissions.remove(permission)
             session.commit()
+            publish_event(
+                "docauthority.identity.role-permission.removed",
+                "docauthority.identity.role-permission.removed",
+                {"role_id": str(role.id), "permission_id": str(permission.id)},
+                key=role.id,
+            )
 
         return {
             "ok": True,
@@ -660,6 +765,16 @@ def replace_role_permission(role_id: str, old_permission_id: str, new_permission
         if new_permission not in role.permissions:
             role.permissions.append(new_permission)
         session.commit()
+        publish_event(
+            "docauthority.identity.role-permission.replaced",
+            "docauthority.identity.role-permission.replaced",
+            {
+                "role_id": str(role.id),
+                "old_permission_id": str(old_permission.id),
+                "new_permission_id": str(new_permission.id),
+            },
+            key=role.id,
+        )
         return {
             "ok": True,
             "status": 200,
@@ -693,6 +808,13 @@ def login_user(email: str, password: str):
         session.commit()
 
         token = _create_access_token(str(user.id))
+        publish_event(
+            "docauthority.identity.auth.login.succeeded",
+            "docauthority.identity.auth.login.succeeded",
+            {"user_id": str(user.id), "email": user.email},
+            key=user.id,
+            actor_id=user.id,
+        )
         return {
             "ok": True,
             "status": 200,

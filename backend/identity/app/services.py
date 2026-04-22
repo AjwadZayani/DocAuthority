@@ -845,7 +845,150 @@ def get_user(user_id: str):
         )
         if user is None:
             return {"ok": False, "status": 404, "error": "User not found", "data": None}
-        return {"ok": True, "status": 200, "error": None, "data": _serialize_user(user)}
+        payload = _serialize_user(user)
+        payload["department_name"] = user.department.name if user.department else None
+        return {"ok": True, "status": 200, "error": None, "data": payload}
+    finally:
+        session.close()
+
+
+def get_user_directory(user_id: str):
+    session = SessionLocal()
+    try:
+        try:
+            user_uuid = UUID(user_id)
+        except ValueError:
+            return {"ok": False, "status": 400, "error": "Invalid user id", "data": None}
+
+        user = (
+            session.query(User)
+            .options(joinedload(User.department))
+            .filter(User.id == user_uuid)
+            .first()
+        )
+        if user is None:
+            return {"ok": False, "status": 404, "error": "User not found", "data": None}
+
+        return {
+            "ok": True,
+            "status": 200,
+            "error": None,
+            "data": {
+                "id": str(user.id),
+                "name": user.name,
+                "email": user.email,
+                "department_id": str(user.department_id),
+                "department_name": user.department.name if user.department else None,
+            },
+        }
+    finally:
+        session.close()
+
+
+def get_user_directories(user_ids: list[str]):
+    session = SessionLocal()
+    try:
+        user_uuids = []
+        seen = set()
+
+        for user_id in user_ids:
+            try:
+                user_uuid = UUID(str(user_id))
+            except ValueError:
+                continue
+
+            if user_uuid in seen:
+                continue
+
+            seen.add(user_uuid)
+            user_uuids.append(user_uuid)
+
+        if not user_uuids:
+            return {"ok": True, "status": 200, "error": None, "data": []}
+
+        users = (
+            session.query(User)
+            .options(joinedload(User.department))
+            .filter(User.id.in_(user_uuids))
+            .all()
+        )
+
+        payload = [
+            {
+                "id": str(user.id),
+                "name": user.name,
+                "email": user.email,
+                "department_id": str(user.department_id),
+                "department_name": user.department.name if user.department else None,
+            }
+            for user in users
+        ]
+
+        return {"ok": True, "status": 200, "error": None, "data": payload}
+    finally:
+        session.close()
+
+
+def get_department(department_id: str):
+    session = SessionLocal()
+    try:
+        try:
+            department_uuid = UUID(department_id)
+        except ValueError:
+            return {"ok": False, "status": 400, "error": "Invalid department id", "data": None}
+
+        department = session.get(Department, department_uuid)
+        if department is None:
+            return {"ok": False, "status": 404, "error": "Department not found", "data": None}
+
+        return {
+            "ok": True,
+            "status": 200,
+            "error": None,
+            "data": {
+                "id": str(department.id),
+                "name": department.name,
+                "description": department.description,
+                "created_at": department.created_at.isoformat() if department.created_at else None,
+            },
+        }
+    finally:
+        session.close()
+
+
+def get_departments(department_ids: list[str]):
+    session = SessionLocal()
+    try:
+        department_uuids = []
+        seen = set()
+
+        for department_id in department_ids:
+            try:
+                department_uuid = UUID(str(department_id))
+            except ValueError:
+                continue
+
+            if department_uuid in seen:
+                continue
+
+            seen.add(department_uuid)
+            department_uuids.append(department_uuid)
+
+        if not department_uuids:
+            return {"ok": True, "status": 200, "error": None, "data": []}
+
+        departments = session.query(Department).filter(Department.id.in_(department_uuids)).all()
+        payload = [
+            {
+                "id": str(department.id),
+                "name": department.name,
+                "description": department.description,
+                "created_at": department.created_at.isoformat() if department.created_at else None,
+            }
+            for department in departments
+        ]
+
+        return {"ok": True, "status": 200, "error": None, "data": payload}
     finally:
         session.close()
 

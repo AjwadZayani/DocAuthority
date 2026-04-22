@@ -11,7 +11,6 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Version;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -22,7 +21,6 @@ public class Document {
     @GeneratedValue UUID id;    
     @Column(nullable = false, length = 200)
     private String name;
-    @Lob
     @Column(nullable = false)
     private String content;
     @Column(nullable = false)

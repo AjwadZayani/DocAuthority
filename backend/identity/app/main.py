@@ -12,6 +12,10 @@ from services import (
     delete_permission,
     delete_role,
     get_user,
+    get_department,
+    get_departments,
+    get_user_directory,
+    get_user_directories,
     get_user_snapshot,
     init_db,
     is_root_admin_user,
@@ -241,6 +245,50 @@ def user_detail(user_id):
             return jsonify({"error": "Forbidden"}), 403
 
     result = get_user(user_id)
+    status = result["status"]
+    return jsonify(result["data"] if result["ok"] else {"error": result["error"]}), status
+
+
+@app.route("/internal/users/<user_id>", methods=["GET"])
+def internal_user_detail(user_id):
+    if not _has_internal_token():
+        return jsonify({"error": "Forbidden"}), 403
+
+    result = get_user_directory(user_id)
+    status = result["status"]
+    return jsonify(result["data"] if result["ok"] else {"error": result["error"]}), status
+
+
+@app.route("/internal/users/bulk", methods=["POST"])
+def internal_user_bulk():
+    if not _has_internal_token():
+        return jsonify({"error": "Forbidden"}), 403
+
+    body = request.get_json(silent=True) or {}
+    user_ids = body.get("user_ids") or []
+    result = get_user_directories(user_ids)
+    status = result["status"]
+    return jsonify(result["data"] if result["ok"] else {"error": result["error"]}), status
+
+
+@app.route("/internal/departments/<department_id>", methods=["GET"])
+def internal_department_detail(department_id):
+    if not _has_internal_token():
+        return jsonify({"error": "Forbidden"}), 403
+
+    result = get_department(department_id)
+    status = result["status"]
+    return jsonify(result["data"] if result["ok"] else {"error": result["error"]}), status
+
+
+@app.route("/internal/departments/bulk", methods=["POST"])
+def internal_department_bulk():
+    if not _has_internal_token():
+        return jsonify({"error": "Forbidden"}), 403
+
+    body = request.get_json(silent=True) or {}
+    department_ids = body.get("department_ids") or []
+    result = get_departments(department_ids)
     status = result["status"]
     return jsonify(result["data"] if result["ok"] else {"error": result["error"]}), status
 

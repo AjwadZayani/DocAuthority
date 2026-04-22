@@ -2,7 +2,7 @@ services:
   document:
     build: ./backend/document
     ports:
-      - "8080:8080"
+      - "8081:8080"
     depends_on:
       kafka:
         condition: service_healthy
@@ -117,7 +117,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8081:8080"
+      - "8082:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092

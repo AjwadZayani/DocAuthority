@@ -1,6 +1,10 @@
 package com.document.controller;
 
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.function.Function;
 import org.springframework.web.bind.annotation.RestController;
 import com.document.service.DocumentService;
 import com.document.dto.DocumentDTO;
@@ -9,6 +13,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static java.util.stream.Collectors.toList;
+import static java.util.stream.Collectors.toMap;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,6 +29,9 @@ import org.springframework.web.server.ResponseStatusException;
 import com.document.model.Document;
 import com.document.mapper.DocumentMapper;
 import com.document.events.KafkaEventPublisher;
+import com.document.identity.DirectoryRecord;
+import com.document.identity.DepartmentRecord;
+import com.document.identity.IdentityDirectoryClient;
 
 @RestController
 @RequestMapping("/documents")
@@ -31,11 +39,51 @@ public class DocumentController {
     private DocumentService svc;
     private DocumentMapper mapper;
     private KafkaEventPublisher eventPublisher;
+    private IdentityDirectoryClient identityDirectoryClient;
 
-    DocumentController(DocumentService svc, DocumentMapper mapper, KafkaEventPublisher eventPublisher) {
+    DocumentController(
+        DocumentService svc,
+        DocumentMapper mapper,
+        KafkaEventPublisher eventPublisher,
+        IdentityDirectoryClient identityDirectoryClient
+    ) {
         this.svc = svc;
         this.mapper = mapper;
         this.eventPublisher = eventPublisher;
+        this.identityDirectoryClient = identityDirectoryClient;
+    }
+
+    private DocumentDTO enrichDocument(Document document) {
+        return enrichDocument(document, Collections.emptyMap(), Collections.emptyMap());
+    }
+
+    private DocumentDTO enrichDocument(
+        Document document,
+        Map<UUID, DirectoryRecord> ownersById,
+        Map<UUID, DepartmentRecord> departmentsById
+    ) {
+        DocumentDTO dto = mapper.toDto(document);
+
+        DirectoryRecord owner = ownersById.get(document.getOwnerId());
+        if (owner == null) {
+            owner = identityDirectoryClient.getUser(document.getOwnerId());
+        }
+        if (owner != null) {
+            dto.setOwnerName(owner.name());
+            dto.setDepartmentName(owner.department_name());
+        }
+
+        if (dto.getDepartmentName() == null && document.getDepartmentId() != null) {
+            DepartmentRecord department = departmentsById.get(document.getDepartmentId());
+            if (department == null) {
+                department = identityDirectoryClient.getDepartment(document.getDepartmentId());
+            }
+            if (department != null) {
+                dto.setDepartmentName(department.name());
+            }
+        }
+
+        return dto;
     }
 
     private Map<String, Object> documentPayload(Document doc) {
@@ -56,7 +104,49 @@ public class DocumentController {
 
     @GetMapping
     public List<DocumentDTO> getDocuments() {
-        return svc.getDocuments().stream().map(mapper::toDto).collect(toList());
+        List<Document> documents = svc.getDocuments();
+
+        List<UUID> ownerIds = documents.stream()
+            .map(Document::getOwnerId)
+            .filter(java.util.Objects::nonNull)
+            .collect(java.util.stream.Collectors.collectingAndThen(toList(), LinkedHashSet::new))
+            .stream()
+            .toList();
+
+        Map<UUID, DirectoryRecord> ownersById = identityDirectoryClient.getUsers(ownerIds).stream()
+            .filter(owner -> owner.id() != null)
+            .collect(toMap(owner -> UUID.fromString(owner.id()), Function.identity(), (left, right) -> left));
+
+        Set<UUID> ownerDepartmentIds = ownersById.values().stream()
+            .map(DirectoryRecord::department_id)
+            .filter(java.util.Objects::nonNull)
+            .map(UUID::fromString)
+            .collect(java.util.stream.Collectors.toSet());
+
+        List<UUID> departmentIds = documents.stream()
+            .map(Document::getDepartmentId)
+            .filter(java.util.Objects::nonNull)
+            .filter(departmentId -> !ownerDepartmentIds.contains(departmentId))
+            .collect(java.util.stream.Collectors.collectingAndThen(toList(), LinkedHashSet::new))
+            .stream()
+            .toList();
+
+        Map<UUID, DepartmentRecord> departmentsById = identityDirectoryClient.getDepartments(departmentIds).stream()
+            .filter(department -> department.id() != null)
+            .collect(toMap(department -> UUID.fromString(department.id()), Function.identity(), (left, right) -> left));
+
+        return documents.stream()
+            .map(document -> enrichDocument(document, ownersById, departmentsById))
+            .collect(toList());
+    }
+
+    @GetMapping("/{id}")
+    public DocumentDTO getDocument(@PathVariable UUID id) {
+        Document document = svc.findDocumentById(id);
+        if (document == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found with id " + id);
+        }
+        return enrichDocument(document);
     }
 
     @PostMapping
@@ -66,7 +156,7 @@ public class DocumentController {
         doc.setVersion(null);
         Document savedDoc = svc.saveDocument(doc);
         publishDocumentEvent("docauthority.document.created", "docauthority.document.created", savedDoc);
-        return mapper.toDto(savedDoc);
+        return enrichDocument(savedDoc);
     }
 
     @DeleteMapping("/{id}")
@@ -121,7 +211,7 @@ public class DocumentController {
         }
         Document updatedDoc = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.updated", "docauthority.document.updated", updatedDoc);
-        return mapper.toDto(updatedDoc);
+        return enrichDocument(updatedDoc);
     }
 
     @PatchMapping("/{id}/status")
@@ -136,7 +226,7 @@ public class DocumentController {
         existingDoc.setStatus(dto.getStatus());
         Document saved = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.status.changed", "docauthority.document.status.changed", saved);
-        return mapper.toDto(saved);
+        return enrichDocument(saved);
     }
 
     @PatchMapping("/{id}/sensitivity")
@@ -151,7 +241,7 @@ public class DocumentController {
         existingDoc.setSensitivity(dto.getSensitivity());
         Document saved = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.updated", "docauthority.document.updated", saved);
-        return mapper.toDto(saved);
+        return enrichDocument(saved);
     }
 
     @PatchMapping("/{id}/rejection-reason")
@@ -166,7 +256,7 @@ public class DocumentController {
         existingDoc.setRejectionReason(dto.getRejectionReason());
         Document saved = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.rejected", "docauthority.document.rejected", saved);
-        return mapper.toDto(saved);
+        return enrichDocument(saved);
     }
 
     @PatchMapping("/{id}/published-at")
@@ -181,7 +271,7 @@ public class DocumentController {
         existingDoc.setPublishedAt(dto.getPublishedAt());
         Document saved = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.published", "docauthority.document.published", saved);
-        return mapper.toDto(saved);
+        return enrichDocument(saved);
     }
 
     @PatchMapping("/{id}/archived-at")
@@ -196,7 +286,7 @@ public class DocumentController {
         existingDoc.setArchivedAt(dto.getArchivedAt());
         Document saved = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.archived", "docauthority.document.archived", saved);
-        return mapper.toDto(saved);
+        return enrichDocument(saved);
     }
 
     @PatchMapping("/{id}/deleted-at")
@@ -211,7 +301,7 @@ public class DocumentController {
         existingDoc.setDeletedAt(dto.getDeletedAt());
         Document saved = svc.saveDocument(existingDoc);
         publishDocumentEvent("docauthority.document.deleted", "docauthority.document.deleted", saved);
-        return mapper.toDto(saved);
+        return enrichDocument(saved);
     }
 
     @PostMapping("/{id}/approve")

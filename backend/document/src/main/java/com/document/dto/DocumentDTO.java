@@ -10,7 +10,9 @@ public class DocumentDTO {
     private String name;
     private String content;
     private UUID ownerId;
+    private String ownerName;
     private UUID departmentId;
+    private String departmentName;
     private STATUS status;
     private SENSITIVITY sensitivity;
     private Double version;
@@ -55,12 +57,28 @@ public class DocumentDTO {
         this.ownerId = ownerId;
     }
 
+    public String getOwnerName() {
+        return ownerName;
+    }
+
+    public void setOwnerName(String ownerName) {
+        this.ownerName = ownerName;
+    }
+
     public UUID getDepartmentId() {
         return departmentId;
     }
 
     public void setDepartmentId(UUID departmentId) {
         this.departmentId = departmentId;
+    }
+
+    public String getDepartmentName() {
+        return departmentName;
+    }
+
+    public void setDepartmentName(String departmentName) {
+        this.departmentName = departmentName;
     }
 
     public STATUS getStatus() {
